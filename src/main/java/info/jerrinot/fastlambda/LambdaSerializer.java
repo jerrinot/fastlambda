@@ -124,6 +124,16 @@ public class LambdaSerializer implements StreamSerializer {
             capturedArgs[i] = in.readObject();
         }
 
+        return deserializeMethod_java8(capturingClass, functionalInterfaceClass, functionalInterfaceMethodName,
+                functionalInterfaceMethodSignature, implMethodKind, implClass, implMethodName, implMethodSignature,
+                instantiatedMethodType, capturedArgs);
+    }
+
+    private Object deserializeMethod_java8(Class<?> capturingClass, String functionalInterfaceClass,
+                                           String functionalInterfaceMethodName, String functionalInterfaceMethodSignature,
+                                           int implMethodKind, String implClass, String implMethodName,
+                                           String implMethodSignature, String instantiatedMethodType,
+                                           Object[] capturedArgs) {
         SerializedLambda serializedLambda = new SerializedLambda(capturingClass, functionalInterfaceClass, functionalInterfaceMethodName,
                 functionalInterfaceMethodSignature, implMethodKind, implClass, implMethodName, implMethodSignature,
                 instantiatedMethodType, capturedArgs);
