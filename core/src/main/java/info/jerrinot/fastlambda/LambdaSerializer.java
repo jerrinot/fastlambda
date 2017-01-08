@@ -6,22 +6,26 @@ import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.HazelcastSerializationException;
 import com.hazelcast.nio.serialization.StreamSerializer;
-import org.xerial.snappy.SnappyOutputStream;
+import info.jerrinot.fastlambda.bytecode.LambdaByteCodeExtractor;
+import info.jerrinot.fastlambda.bytecode.MethodStub;
 
 import java.io.IOException;
-import java.io.OutputStream;
 import java.io.Serializable;
 import java.lang.invoke.SerializedLambda;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.util.concurrent.atomic.AtomicLong;
 
+import static com.hazelcast.util.ExceptionUtil.rethrow;
 import static org.xerial.snappy.Snappy.compress;
 import static org.xerial.snappy.Snappy.uncompressString;
 
 public class LambdaSerializer implements StreamSerializer {
     public static final int TYPE_ID = 1;
+    public static final boolean USE_COMPATIBILITY_MODE = true;
 
     private JavaDefaultSerializers.JavaSerializer javaSerializer;
+    private static final AtomicLong CLASS_ID_COUNTER = new AtomicLong();
 
     public LambdaSerializer() {
         this.javaSerializer = new JavaDefaultSerializers.JavaSerializer(false, false);
@@ -31,16 +35,47 @@ public class LambdaSerializer implements StreamSerializer {
         checkSerializable(object);
         if (isLambda(object)) {
             out.writeBoolean(true);
-            SnappyOutputStream snappyFramedOutputStream = new SnappyOutputStream((OutputStream) out);
-            serializeLambda(out, object);
+            if (USE_COMPATIBILITY_MODE) {
+                serializeLambda_java6(out, object);
+            } else {
+                serializeLambda_java8(out, object);
+            }
         } else {
             out.writeBoolean(false);
             javaSerializer.write(out, object);
         }
     }
 
-    private void serializeLambda(ObjectDataOutput out, Object object) throws IOException {
-        SerializedLambda serializedLambda = toSerializedLambda(object);
+    private void serializeLambda_java6(ObjectDataOutput out, Object object) throws IOException {
+        SerializedLambda serializedLambda = Utils.toSerializedLambda(object);
+
+        LambdaByteCodeExtractor extractor = new LambdaByteCodeExtractor();
+        ClassLoader classLoader = object.getClass().getClassLoader();
+        Class<?> implClazz = replaceSlashAndLoadClass(classLoader, serializedLambda.getImplClass());
+        MethodStub stub = extractor.getMethodStub(implClazz, serializedLambda.getImplMethodName());
+
+        String className = "generated" + CLASS_ID_COUNTER.getAndIncrement();
+        try {
+            byte[] bytes = extractor.generateClass(className, object.getClass().getInterfaces(), stub);
+            out.writeByteArray(bytes);
+            out.writeUTF(className);
+        } catch (Exception e) {
+            throw rethrow(e);
+        }
+    }
+
+    private Class<?> replaceSlashAndLoadClass(ClassLoader cl, String className) {
+        className = className.replaceAll("/", ".");
+        try {
+            return cl.loadClass(className);
+        } catch (ClassNotFoundException e) {
+            throw rethrow(e);
+        }
+
+    }
+
+    private void serializeLambda_java8(ObjectDataOutput out, Object object) throws IOException {
+        SerializedLambda serializedLambda = Utils.toSerializedLambda(object);
         String capturingClass = serializedLambda.getCapturingClass();
         out.writeByteArray(compress(capturingClass));
         String functionalInterfaceClass = serializedLambda.getFunctionalInterfaceClass();
@@ -67,20 +102,6 @@ public class LambdaSerializer implements StreamSerializer {
         }
     }
 
-    private SerializedLambda toSerializedLambda(Object object) {
-        try {
-            Method writeReplaceMethod = object.getClass().getDeclaredMethod("writeReplace");
-            writeReplaceMethod.setAccessible(true);
-            return  (SerializedLambda) writeReplaceMethod.invoke(object);
-        } catch (NoSuchMethodException e) {
-            throw new HazelcastSerializationException("Cannot serialize lambda " + object, e);
-        } catch (IllegalAccessException e) {
-            throw new HazelcastSerializationException("Cannot serialize lambda " + object, e);
-        } catch (InvocationTargetException e) {
-            throw new HazelcastSerializationException("Cannot serialize lambda " + object, e);
-        }
-    }
-
     private static void checkSerializable(Object object) {
         if (!(object instanceof Serializable)) {
             throw new HazelcastSerializationException(object.getClass().getName() + " does not implement " + Serializable.class.getName());
@@ -94,12 +115,34 @@ public class LambdaSerializer implements StreamSerializer {
     public Object read(ObjectDataInput in) throws IOException {
         boolean isLambda = in.readBoolean();
         if (isLambda) {
-            return deserializeLambda(in);
+            if (USE_COMPATIBILITY_MODE) {
+                return deserializeLambda6(in);
+            } else {
+                return deserializeLambda8(in);
+            }
         }
         return javaSerializer.read(in);
     }
 
-    private Object deserializeLambda(ObjectDataInput in) throws IOException {
+    private Object deserializeLambda6(ObjectDataInput in) throws IOException {
+        byte[] bytecode = in.readByteArray();
+        String className = in.readUTF();
+
+        ClassLoader classLoader = in.getClassLoader();
+        classLoader = classLoader == null ? getClass().getClassLoader() : classLoader;
+        try {
+            Class<?> clazz = new SingleClassClassLoader(className, bytecode, classLoader).loadClass(className);
+            return clazz.newInstance();
+        } catch (ClassNotFoundException e) {
+            throw rethrow(e);
+        } catch (IllegalAccessException e) {
+            throw rethrow(e);
+        } catch (InstantiationException e) {
+            throw rethrow(e);
+        }
+    }
+
+    private Object deserializeLambda8(ObjectDataInput in) throws IOException {
         Class<?> capturingClass;
         String capturingClassName = uncompressString(in.readByteArray());
         capturingClassName = capturingClassName.replace('/', '.');

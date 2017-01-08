@@ -6,53 +6,89 @@
 
     <groupId>info.jerrinot</groupId>
     <artifactId>fastlambda</artifactId>
+    <packaging>pom</packaging>
     <version>0.1-SNAPSHOT</version>
+    <modules>
+        <module>core</module>
+        <module>it-member</module>
+        <module>it-client</module>
+    </modules>
 
     <properties>
-        <maven.compiler.source>1.8</maven.compiler.source>
-        <maven.compiler.target>1.8</maven.compiler.target>
+        <java.source.version>1.6</java.source.version>
+        <java.target.version>1.6</java.target.version>
+        <java.testSource.version>1.8</java.testSource.version>
+        <java.testTarget.version>1.8</java.testTarget.version>
 
         <hazelcast.version>3.7.4</hazelcast.version>
         <junit.version>4.12</junit.version>
-        <bytebuddy.version>1.6.0</bytebuddy.version>
     </properties>
 
-    <dependencies>
-        <dependency>
-            <groupId>com.hazelcast</groupId>
-            <artifactId>hazelcast</artifactId>
-            <version>${hazelcast.version}</version>
-            <scope>provided</scope>
-        </dependency>
+    <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <version>3.5.1</version>
+                    <configuration>
+                        <source>${java.source.version}</source>
+                        <target>${java.target.version}</target>
+                        <testSource>${java.testSource.version}</testSource>
+                        <testTarget>${java.testTarget.version}</testTarget>
+                    </configuration>
+                </plugin>
 
-        <dependency>
-            <groupId>org.xerial.snappy</groupId>
-            <artifactId>snappy-java</artifactId>
-            <version>1.1.2.1</version>
-            <type>jar</type>
-            <scope>compile</scope>
-        </dependency>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-enforcer-plugin</artifactId>
+                    <version>1.4.1</version>
+                    <configuration>
+                        <rules>
+                            <requireJavaVersion>
+                                <version>${java.source.version}</version>
+                            </requireJavaVersion>
+                        </rules>
+                    </configuration>
+                    <executions>
+                        <execution>
+                            <id>enforce-java</id>
+                            <goals>
+                                <goal>enforce</goal>
+                            </goals>
+                        </execution>
+                    </executions>
+                </plugin>
+            </plugins>
+        </pluginManagement>
 
-        <dependency>
-            <groupId>net.bytebuddy</groupId>
-            <artifactId>byte-buddy</artifactId>
-            <version>${bytebuddy.version}</version>
-            <scope>compile</scope>
-        </dependency>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
 
-        <dependency>
-            <groupId>junit</groupId>
-            <artifactId>junit</artifactId>
-            <version>${junit.version}</version>
-            <scope>test</scope>
-        </dependency>
+    <profiles>
+        <profile>
+            <id>ide</id>
+            <activation>
+                <activeByDefault>false</activeByDefault>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-compiler-plugin</artifactId>
+                        <configuration>
+                            <source>${java.testTarget.version}</source>
+                            <target>${java.testTarget.version}</target>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 
-        <dependency>
-            <groupId>com.hazelcast</groupId>
-            <artifactId>hazelcast</artifactId>
-            <version>${hazelcast.version}</version>
-            <scope>test</scope>
-            <classifier>tests</classifier>
-        </dependency>
-    </dependencies>
 </project>
